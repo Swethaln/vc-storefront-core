@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
 using System.Text.Unicode;
-using Microsoft.ApplicationInsights.Extensibility;
 using Microsoft.ApplicationInsights.Extensibility.Implementation;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authorization;
@@ -12,6 +11,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.HttpsPolicy;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Rewrite;
 using Microsoft.Extensions.Configuration;
@@ -30,6 +30,7 @@ using VirtoCommerce.Storefront.Extensions;
 using VirtoCommerce.Storefront.Filters;
 using VirtoCommerce.Storefront.Infrastructure;
 using VirtoCommerce.Storefront.Infrastructure.ApplicationInsights;
+using VirtoCommerce.Storefront.Infrastructure.Senders;
 using VirtoCommerce.Storefront.JsonConverters;
 using VirtoCommerce.Storefront.Middleware;
 using VirtoCommerce.Storefront.Model;
@@ -298,6 +299,30 @@ namespace VirtoCommerce.Storefront
                 options.IncludeSubDomains = true;
                 options.MaxAge = TimeSpan.FromDays(30);
             });
+
+            // Add services used in Two factor authorization.
+            services.AddTransient<IEmailSender, DummyEmailSender>();
+            services.AddTransient<DummySmsSender>();
+            services.AddTransient<TwilioSender>();
+            services.AddTransient<AspsmsSender>();
+            services.AddTransient<Func<ISmsSender>>(serviceProvider =>
+                () =>
+                {
+                    ISmsSender result = serviceProvider.GetService<DummySmsSender>();
+                    var twilioSection = Configuration.GetSection("SmsSenderOptions:Twilio");
+                    if (twilioSection.GetChildren().Any())
+                    {
+                        services.Configure<SMSoptions>(twilioSection);
+                        result = serviceProvider.GetService<TwilioSender>();
+                    }
+                    var aspsmsSection = Configuration.GetSection("SmsSenderOptions:ASPSMS");
+                    if (aspsmsSection.GetChildren().Any())
+                    {
+                        services.Configure<SMSoptions>(aspsmsSection);
+                        result = serviceProvider.GetService<AspsmsSender>();
+                    }
+                    return result;
+                });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

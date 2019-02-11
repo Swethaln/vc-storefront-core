@@ -1,8 +1,10 @@
+using System;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.Storefront.AutoRestClients.PlatformModuleApi;
@@ -12,6 +14,7 @@ using VirtoCommerce.Storefront.Domain.Security;
 using VirtoCommerce.Storefront.Domain.Security.Notifications;
 using VirtoCommerce.Storefront.Extensions;
 using VirtoCommerce.Storefront.Infrastructure;
+using VirtoCommerce.Storefront.Infrastructure.Senders;
 using VirtoCommerce.Storefront.Model;
 using VirtoCommerce.Storefront.Model.Common;
 using VirtoCommerce.Storefront.Model.Common.Events;
@@ -29,11 +32,21 @@ namespace VirtoCommerce.Storefront.Controllers
         private readonly StorefrontOptions _options;
         private readonly INotifications _platformNotificationApi;
         private readonly IAuthorizationService _authorizationService;
+        private readonly IEmailSender _emailSender;
+        private readonly Func<ISmsSender> _smsSenderFactory;
 
         private readonly string[] _firstNameClaims = { ClaimTypes.GivenName, "urn:github:name", ClaimTypes.Name };
 
-        public AccountController(IWorkContextAccessor workContextAccessor, IStorefrontUrlBuilder urlBuilder, SignInManager<User> signInManager,
-            IEventPublisher publisher, INotifications platformNotificationApi, IAuthorizationService authorizationService, IOptions<StorefrontOptions> options)
+        public AccountController(
+            IWorkContextAccessor workContextAccessor,
+            IStorefrontUrlBuilder urlBuilder,
+            SignInManager<User> signInManager,
+            IEventPublisher publisher,
+            INotifications platformNotificationApi,
+            IAuthorizationService authorizationService,
+            IOptions<StorefrontOptions> options,
+            IEmailSender emailSender,
+            Func<ISmsSender> smsSenderFactory)
             : base(workContextAccessor, urlBuilder)
         {
             _signInManager = signInManager;
@@ -41,6 +54,8 @@ namespace VirtoCommerce.Storefront.Controllers
             _options = options.Value;
             _platformNotificationApi = platformNotificationApi;
             _authorizationService = authorizationService;
+            _emailSender = emailSender;
+            _smsSenderFactory = smsSenderFactory;
         }
 
         //GET: /account
@@ -273,7 +288,6 @@ namespace VirtoCommerce.Storefront.Controllers
             {
                 var user = await _signInManager.UserManager.FindByNameAsync(login.Username);
 
-                //Check that current user can sing in to current store
                 if (new CanUserLoginToStoreSpecification(user).IsSatisfiedBy(WorkContext.CurrentStore))
                 {
                     await _publisher.Publish(new UserLoginEvent(WorkContext, user));
@@ -285,14 +299,43 @@ namespace VirtoCommerce.Storefront.Controllers
                 }
             }
 
+            if (loginResult.RequiresTwoFactor)
+            {
+                var user = await _signInManager.UserManager.FindByNameAsync(login.Username);
+
+                // Generate the token and send it
+
+                // TODO: Support configurable providers ("Phone/Email")
+                // https://github.com/aspnet/Docs/blob/aac9bf5e4aaa4f593648ddb7b92ff0e52f2f6a47/aspnetcore/security/authentication/2fa/sample/Web2FA/Controllers/AccountController.cs#L380
+                // Now we are using only Phone provider
+                var selectedProvider = "Phone";
+
+                var userManager = _signInManager.UserManager;
+                var code = await userManager.GenerateTwoFactorTokenAsync(user, selectedProvider);
+                if (string.IsNullOrWhiteSpace(code))
+                {
+                    return View("Error");
+                }
+
+                var veryfyCodeViewModel = new VerifyCodeViewModel() { Provider = selectedProvider, ReturnUrl = returnUrl, RememberMe = login.RememberMe, Username = login.Username };
+                var message = "Your security code is: " + code;
+                System.Diagnostics.Debug.WriteLine(message);
+                if (veryfyCodeViewModel.Provider == "Email")
+                {
+                    await _emailSender.SendEmailAsync(await userManager.GetEmailAsync(user), "Security Code", message);
+                }
+                else if (veryfyCodeViewModel.Provider == "Phone")
+                {
+                    await _smsSenderFactory().SendSmsAsync(await userManager.GetPhoneNumberAsync(user), message);
+                }
+
+                WorkContext.Form = veryfyCodeViewModel;
+                return View("verify-code", WorkContext);
+            }
+
             if (loginResult.IsLockedOut)
             {
                 return View("lockedout", WorkContext);
-            }
-
-            if (loginResult.RequiresTwoFactor)
-            {
-                return StoreFrontRedirect("~/account/sendcode");
             }
 
             if (loginResult is CustomSignInResult signInResult && signInResult.IsRejected)
@@ -304,6 +347,37 @@ namespace VirtoCommerce.Storefront.Controllers
             WorkContext.Form = login;
 
             return View("customers/login", WorkContext);
+        }
+
+        [HttpPost("verifycode")]
+        [AllowAnonymous]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> VerifyCode(VerifyCodeViewModel model)
+        {
+            TryValidateModel(model);
+            if (!ModelState.IsValid)
+            {
+                return View("verify-code", WorkContext);
+            }
+
+            // The following code protects for brute force attacks against the two factor codes.
+            // If a user enters incorrect codes for a specified amount of time then the user account
+            // will be locked out for a specified amount of time.
+            var result = await _signInManager.TwoFactorSignInAsync(model.Provider, model.Code, model.RememberMe ?? false, model.RememberBrowser ?? false);
+            if (result.Succeeded)
+            {
+                var user = await _signInManager.UserManager.FindByNameAsync(model.Username);
+                await _publisher.Publish(new UserLoginEvent(WorkContext, user));
+                return StoreFrontRedirect(model.ReturnUrl);
+            }
+            if (result.IsLockedOut)
+            {
+                return View("lockedout", WorkContext);
+            }
+
+            ModelState.AddModelError("form", "Invalid code.");
+            WorkContext.Form = model;
+            return View("verify-code", WorkContext);
         }
 
         [HttpGet("logout")]

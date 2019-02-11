@@ -36,6 +36,7 @@
   <ItemGroup>
     <PackageReference Include="AspNet.Security.OAuth.GitHub" Version="2.0.0" />
     <PackageReference Include="AspNet.Security.OAuth.StackExchange" Version="2.0.0" />
+    <PackageReference Include="ASPSMS" Version="0.0.2" />
     <PackageReference Include="IdentityModel" Version="3.10.2" />
     <PackageReference Include="Markdig" Version="0.15.4" />
     <PackageReference Include="Microsoft.ApplicationInsights.AspNetCore" Version="2.5.1" />
@@ -54,6 +55,7 @@
     <PackageReference Include="Nito.AsyncEx" Version="5.0.0-pre-05" />
     <PackageReference Include="PagedList.Core" Version="1.17.4" />
     <PackageReference Include="Scrutor" Version="3.0.2" />
+    <PackageReference Include="Twilio" Version="5.20.1" />
     <PackageReference Include="VirtoCommerce.Tools" Version="1.2.0" />
     <PackageReference Include="WindowsAzure.Storage" Version="9.3.2" />
   </ItemGroup>
