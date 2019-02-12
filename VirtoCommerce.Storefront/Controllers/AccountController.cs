@@ -314,12 +314,12 @@ namespace VirtoCommerce.Storefront.Controllers
                 var code = await userManager.GenerateTwoFactorTokenAsync(user, selectedProvider);
                 if (string.IsNullOrWhiteSpace(code))
                 {
-                    return View("Error");
+                    WorkContext.ErrorMessage = $"Generated two factor authentication token is empty";
+                    return View("error", WorkContext);
                 }
 
                 var veryfyCodeViewModel = new VerifyCodeViewModel() { Provider = selectedProvider, ReturnUrl = returnUrl, RememberMe = login.RememberMe, Username = login.Username };
                 var message = "Your security code is: " + code;
-                System.Diagnostics.Debug.WriteLine(message);
                 if (veryfyCodeViewModel.Provider == "Email")
                 {
                     await _emailSender.SendEmailAsync(await userManager.GetEmailAsync(user), "Security Code", message);
