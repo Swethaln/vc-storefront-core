@@ -654,6 +654,91 @@ namespace VirtoCommerce.Storefront.Controllers
             }
         }
 
+        [HttpGet("phonenumber")]
+        public ActionResult UpdatePhoneNumber(string phoneNumber)
+        {
+            return View("customers/phone_number", new UpdatePhoneNumberModel { PhoneNumber = phoneNumber });
+        }
+
+        [HttpPost("phonenumber")]
+        [ValidateAntiForgeryToken]
+        public async Task<ActionResult> UpdatePhoneNumber([FromForm]UpdatePhoneNumberModel formModel)
+        {
+            if (string.IsNullOrEmpty(formModel.PhoneNumber))
+            {
+                WorkContext.ErrorMessage = "Phone number is not valid";
+                WorkContext.Form = formModel;
+                return View("customers/phone_number", WorkContext);
+            }
+            // Generate the token and send it
+            var code = await _signInManager.UserManager.GenerateChangePhoneNumberTokenAsync(WorkContext.CurrentUser, formModel.PhoneNumber);
+            await _smsSenderFactory().SendSmsAsync(formModel.PhoneNumber, "Your security code is: " + code);
+
+            return StoreFrontRedirect($"customers/phone_number?phoneNumber={formModel.PhoneNumber}");
+        }
+
+        [HttpGet("phonenumber/verify")]
+        public ActionResult VerifyPhoneNumber(string phoneNumber)
+        {
+            if (string.IsNullOrEmpty(phoneNumber))
+            {
+                WorkContext.ErrorMessage = "Phone number is not valid";
+                return View("error", WorkContext);
+            }
+            return View("customers/verify_phone", new VerifyPhoneNumberModel { PhoneNumber = phoneNumber });
+        }
+
+        [HttpPost("phonenumber/verify")]
+        [ValidateAntiForgeryToken]
+        public async Task<ActionResult> VerifyPhoneNumber([FromForm]VerifyPhoneNumberModel formModel)
+        {
+            if (string.IsNullOrEmpty(formModel.Code))
+            {
+                WorkContext.ErrorMessage = "Verification code could not be empty";
+                return View("error", WorkContext);
+            }
+
+            if (string.IsNullOrEmpty(formModel.PhoneNumber))
+            {
+                WorkContext.ErrorMessage = "Phone number is not valid";
+                return View("error", WorkContext);
+            }
+
+            var result = await _signInManager.UserManager.ChangePhoneNumberAsync(WorkContext.CurrentUser, formModel.PhoneNumber, formModel.Code);
+            if (result.Succeeded)
+            {
+                await _signInManager.SignInAsync(WorkContext.CurrentUser, isPersistent: false);
+                return StoreFrontRedirect("~/account");
+            }
+            // If we got this far, something failed
+            WorkContext.ErrorMessage = "Failed to verify phone number";
+            return View("customers/verify_phone", formModel);
+        }
+
+        [HttpDelete("phonenumber")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> RemovePhoneNumber()
+        {
+            var result = await _signInManager.UserManager.SetPhoneNumberAsync(WorkContext.CurrentUser, null);
+            if (result.Succeeded)
+            {
+                await _signInManager.SignInAsync(WorkContext.CurrentUser, isPersistent: false);
+                return StoreFrontRedirect("~/account");
+            }
+
+            WorkContext.ErrorMessage = "Cannot remove phone number";
+            return View("error", WorkContext);
+        }
+
+        [HttpPost("twofactorauthentification")]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> EnableTwoFactorAuthentication(EnableTwoFactorAuthenticationModel model)
+        {
+            await _signInManager.UserManager.SetTwoFactorEnabledAsync(WorkContext.CurrentUser, model.Enabled);
+            await _signInManager.SignInAsync(WorkContext.CurrentUser, isPersistent: false);
+            return StoreFrontRedirect("~/account");
+        }
+
         private static string GetUserEmail(User user)
         {
             string email = null;
