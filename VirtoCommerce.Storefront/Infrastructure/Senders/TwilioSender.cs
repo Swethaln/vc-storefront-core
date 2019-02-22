@@ -8,8 +8,8 @@ namespace VirtoCommerce.Storefront.Infrastructure.Senders
 {
     public class TwilioSender : ISmsSender
     {
-        private readonly SMSoptions _options;  // set only via Secret Manager
-        public TwilioSender(IOptions<SMSoptions> optionsAccessor)
+        private readonly SmsProviderOptions _options;  // set only via Secret Manager
+        public TwilioSender(IOptions<SmsProviderOptions> optionsAccessor)
         {
             _options = optionsAccessor.Value;
         }
@@ -17,15 +17,15 @@ namespace VirtoCommerce.Storefront.Infrastructure.Senders
         {
             // Plug in your SMS service here to send a text message.
             // Your Account SID from twilio.com/console
-            var accountSid = _options.SMSAccountIdentification;
+            var accountSid = _options.SmsAccountIdentification;
             // Your Auth Token from twilio.com/console
-            var authToken = _options.SMSAccountPassword;
+            var authToken = _options.SmsAccountPassword;
 
             TwilioClient.Init(accountSid, authToken);
 
             return MessageResource.CreateAsync(
               to: new PhoneNumber(number),
-              from: new PhoneNumber(_options.SMSAccountFrom),
+              from: new PhoneNumber(_options.SmsAccountFrom),
               body: message);
         }
     }

@@ -4,7 +4,6 @@ using System.Security.Claims;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Identity.UI.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.Storefront.AutoRestClients.PlatformModuleApi;
@@ -32,7 +31,6 @@ namespace VirtoCommerce.Storefront.Controllers
         private readonly StorefrontOptions _options;
         private readonly INotifications _platformNotificationApi;
         private readonly IAuthorizationService _authorizationService;
-        private readonly IEmailSender _emailSender;
         private readonly Func<ISmsSender> _smsSenderFactory;
 
         private readonly string[] _firstNameClaims = { ClaimTypes.GivenName, "urn:github:name", ClaimTypes.Name };
@@ -45,7 +43,6 @@ namespace VirtoCommerce.Storefront.Controllers
             INotifications platformNotificationApi,
             IAuthorizationService authorizationService,
             IOptions<StorefrontOptions> options,
-            IEmailSender emailSender,
             Func<ISmsSender> smsSenderFactory)
             : base(workContextAccessor, urlBuilder)
         {
@@ -54,7 +51,6 @@ namespace VirtoCommerce.Storefront.Controllers
             _options = options.Value;
             _platformNotificationApi = platformNotificationApi;
             _authorizationService = authorizationService;
-            _emailSender = emailSender;
             _smsSenderFactory = smsSenderFactory;
         }
 
@@ -320,14 +316,14 @@ namespace VirtoCommerce.Storefront.Controllers
 
                 var veryfyCodeViewModel = new VerifyCodeViewModel() { Provider = selectedProvider, ReturnUrl = returnUrl, RememberMe = login.RememberMe, Username = login.Username };
                 var message = "Your security code is: " + code;
-                if (veryfyCodeViewModel.Provider == "Email")
-                {
-                    await _emailSender.SendEmailAsync(await userManager.GetEmailAsync(user), "Security Code", message);
-                }
-                else if (veryfyCodeViewModel.Provider == "Phone")
+                if (veryfyCodeViewModel.Provider == "Phone")
                 {
                     await _smsSenderFactory().SendSmsAsync(await userManager.GetPhoneNumberAsync(user), message);
                 }
+                //else if (veryfyCodeViewModel.Provider == "Email")
+                //{
+                //    await _emailSender.SendEmailAsync(await userManager.GetEmailAsync(user), "Security Code", message);
+                //}
 
                 WorkContext.Form = veryfyCodeViewModel;
                 return View("verify-code", WorkContext);
@@ -493,20 +489,38 @@ namespace VirtoCommerce.Storefront.Controllers
             var user = await _signInManager.UserManager.FindByEmailAsync(formModel.Email);
             if (user != null)
             {
-                var token = await _signInManager.UserManager.GeneratePasswordResetTokenAsync(user);
-                var callbackUrl = Url.Action("ResetPassword", "Account", new { UserId = user.Id, Token = token }, protocol: Request.Scheme);
-
-                var resetPasswordEmailNotification = new ResetPasswordEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                if (_options.UseSmsForPasswordReset)
                 {
-                    Url = callbackUrl,
-                    Sender = WorkContext.CurrentStore.Email,
-                    Recipient = GetUserEmail(user)
-                };
+                    var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
+                    if (string.IsNullOrEmpty(phoneNumber))
+                    {
+                        ModelState.AddModelError("form", "Phone is not assigned to the user");
+                    }
+                    else
+                    {
+                        var token = await _signInManager.UserManager.GenerateChangePhoneNumberTokenAsync(user, phoneNumber);
+                        await _smsSenderFactory().SendSmsAsync(phoneNumber, "Your reset password security code is: " + token);
 
-                var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordEmailNotification.ToNotificationDto());
-                if (sendingResult.IsSuccess != true)
+                        return StoreFrontRedirect($"forgot_password_code?userId={user.Id}");
+                    }
+                }
+                else
                 {
-                    ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                    var token = await _signInManager.UserManager.GeneratePasswordResetTokenAsync(user);
+                    var callbackUrl = Url.Action("ResetPassword", "Account", new { UserId = user.Id, Token = token }, protocol: Request.Scheme);
+
+                    var resetPasswordEmailNotification = new ResetPasswordEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                    {
+                        Url = callbackUrl,
+                        Sender = WorkContext.CurrentStore.Email,
+                        Recipient = GetUserEmail(user)
+                    };
+
+                    var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordEmailNotification.ToNotificationDto());
+                    if (sendingResult.IsSuccess != true)
+                    {
+                        ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                    }
                 }
             }
             else
@@ -569,7 +583,18 @@ namespace VirtoCommerce.Storefront.Controllers
                 return View("error", WorkContext);
             }
 
-            var isValidToken = await _signInManager.UserManager.VerifyUserTokenAsync(user, _signInManager.UserManager.Options.Tokens.PasswordResetTokenProvider, UserManager<User>.ResetPasswordTokenPurpose, token);
+            var isValidToken = false;
+
+            if (_options.UseSmsForPasswordReset)
+            {
+                var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
+                isValidToken = await _signInManager.UserManager.VerifyChangePhoneNumberTokenAsync(user, token, phoneNumber);
+            }
+            else
+            {
+                isValidToken = await _signInManager.UserManager.VerifyUserTokenAsync(user, _signInManager.UserManager.Options.Tokens.PasswordResetTokenProvider, UserManager<User>.ResetPasswordTokenPurpose, token);
+            }
+
             if (!isValidToken)
             {
                 WorkContext.ErrorMessage = "Reset password token is invalid or expired";

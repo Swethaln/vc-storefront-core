@@ -5,9 +5,9 @@ namespace VirtoCommerce.Storefront.Infrastructure.Senders
 {
     public class AspsmsSender : ISmsSender
     {
-        private readonly SMSoptions _options;  // set only via Secret Manager
+        private readonly SmsProviderOptions _options;  // set only via Secret Manager
 
-        public AspsmsSender(IOptions<SMSoptions> optionsAccessor)
+        public AspsmsSender(IOptions<SmsProviderOptions> optionsAccessor)
         {
             _options = optionsAccessor.Value;
         }
@@ -16,9 +16,9 @@ namespace VirtoCommerce.Storefront.Infrastructure.Senders
         {
             var SMSSender = new ASPSMS.SMS();
 
-            SMSSender.Userkey = _options.SMSAccountIdentification;
-            SMSSender.Password = _options.SMSAccountPassword;
-            SMSSender.Originator = _options.SMSAccountFrom;
+            SMSSender.Userkey = _options.SmsAccountIdentification;
+            SMSSender.Password = _options.SmsAccountPassword;
+            SMSSender.Originator = _options.SmsAccountFrom;
 
             SMSSender.AddRecipient(number);
             SMSSender.MessageData = message;
