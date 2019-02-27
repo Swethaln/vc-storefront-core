@@ -498,7 +498,7 @@ namespace VirtoCommerce.Storefront.Controllers
                     }
                     else
                     {
-                        var token = await _signInManager.UserManager.GenerateChangePhoneNumberTokenAsync(user, phoneNumber);
+                        var token = await _signInManager.UserManager.GenerateUserTokenAsync(user, TokenOptions.DefaultPhoneProvider, "ResetPassword");
                         await _smsSenderFactory().SendSmsAsync(phoneNumber, "Your reset password security code is: " + token);
 
                         WorkContext.CurrentUser = user;
@@ -596,8 +596,7 @@ namespace VirtoCommerce.Storefront.Controllers
                 return View("error", WorkContext);
             }
 
-            var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
-            var isValidToken = await _signInManager.UserManager.VerifyChangePhoneNumberTokenAsync(user, formModel.Code, phoneNumber);
+            var isValidToken = await _signInManager.UserManager.VerifyUserTokenAsync(user, TokenOptions.DefaultPhoneProvider, "ResetPassword", formModel.Code);
 
             if (!isValidToken)
             {
