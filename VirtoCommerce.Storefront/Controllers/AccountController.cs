@@ -501,7 +501,8 @@ namespace VirtoCommerce.Storefront.Controllers
                         var token = await _signInManager.UserManager.GenerateChangePhoneNumberTokenAsync(user, phoneNumber);
                         await _smsSenderFactory().SendSmsAsync(phoneNumber, "Your reset password security code is: " + token);
 
-                        return StoreFrontRedirect($"forgot_password_code?userId={user.Id}");
+                        WorkContext.CurrentUser = user;
+                        return View($"customers/forgot_password_code", WorkContext);
                     }
                 }
                 else
@@ -566,6 +567,57 @@ namespace VirtoCommerce.Storefront.Controllers
             return View("customers/forgot_login", WorkContext);
         }
 
+        [HttpPost("forgotpasswordbycode")]
+        [AllowAnonymous]
+        public async Task<ActionResult> ResetPasswordByCode(ResetPasswordByCodeModel formModel)
+        {
+            if (string.IsNullOrEmpty(formModel.Email))
+            {
+                WorkContext.ErrorMessage = "Error in request";
+                return View("error", WorkContext);
+            }
+
+            if (string.IsNullOrEmpty(formModel.Code))
+            {
+                WorkContext.ErrorMessage = "Code could not be empty";
+                return View("error", WorkContext);
+            }
+
+            if (!_options.UseSmsForPasswordReset)
+            {
+                WorkContext.ErrorMessage = "Reset password by code is turned off.";
+                return View("error", WorkContext);
+            }
+
+            var user = await _signInManager.UserManager.FindByEmailAsync(formModel.Email);
+            if (user == null)
+            {
+                WorkContext.ErrorMessage = "User was not found.";
+                return View("error", WorkContext);
+            }
+
+            var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
+            var isValidToken = await _signInManager.UserManager.VerifyChangePhoneNumberTokenAsync(user, formModel.Code, phoneNumber);
+
+            if (!isValidToken)
+            {
+                WorkContext.ErrorMessage = "Reset password token is invalid or expired";
+                return View("error", WorkContext);
+            }
+
+            var token = await _signInManager.UserManager.GeneratePasswordResetTokenAsync(user);
+
+            WorkContext.Form = new ResetPassword
+            {
+                Token = token,
+                Email = user.Email,
+                UserName = user.UserName
+            };
+
+            return View("customers/reset_password", WorkContext);
+        }
+
+
         [HttpGet("resetpassword")]
         [AllowAnonymous]
         public async Task<ActionResult> ResetPassword(string token, string userId)
@@ -583,17 +635,7 @@ namespace VirtoCommerce.Storefront.Controllers
                 return View("error", WorkContext);
             }
 
-            var isValidToken = false;
-
-            if (_options.UseSmsForPasswordReset)
-            {
-                var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
-                isValidToken = await _signInManager.UserManager.VerifyChangePhoneNumberTokenAsync(user, token, phoneNumber);
-            }
-            else
-            {
-                isValidToken = await _signInManager.UserManager.VerifyUserTokenAsync(user, _signInManager.UserManager.Options.Tokens.PasswordResetTokenProvider, UserManager<User>.ResetPasswordTokenPurpose, token);
-            }
+            var isValidToken = await _signInManager.UserManager.VerifyUserTokenAsync(user, _signInManager.UserManager.Options.Tokens.PasswordResetTokenProvider, UserManager<User>.ResetPasswordTokenPurpose, token);
 
             if (!isValidToken)
             {
