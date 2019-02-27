@@ -499,10 +499,23 @@ namespace VirtoCommerce.Storefront.Controllers
                     else
                     {
                         var token = await _signInManager.UserManager.GenerateUserTokenAsync(user, TokenOptions.DefaultPhoneProvider, "ResetPassword");
-                        await _smsSenderFactory().SendSmsAsync(phoneNumber, "Your reset password security code is: " + token);
 
-                        WorkContext.CurrentUser = user;
-                        return View($"customers/forgot_password_code", WorkContext);
+                        var resetPasswordSmsNotification = new ResetPasswordSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                        {
+                            Token = token,
+                            Recipient = phoneNumber,
+                        };
+
+                        var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordSmsNotification.ToNotificationDto());
+                        if (sendingResult.IsSuccess == true)
+                        {
+                            WorkContext.CurrentUser = user;
+                            return View($"customers/forgot_password_code", WorkContext);
+                        }
+                        else
+                        {
+                            ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                        }
                     }
                 }
                 else
