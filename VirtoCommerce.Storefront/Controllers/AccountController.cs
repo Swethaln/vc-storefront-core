@@ -15,6 +15,7 @@ using VirtoCommerce.Storefront.Infrastructure;
 using VirtoCommerce.Storefront.Model;
 using VirtoCommerce.Storefront.Model.Common;
 using VirtoCommerce.Storefront.Model.Common.Events;
+using VirtoCommerce.Storefront.Model.Common.Notifications;
 using VirtoCommerce.Storefront.Model.Security;
 using VirtoCommerce.Storefront.Model.Security.Events;
 using VirtoCommerce.Storefront.Model.Security.Specifications;
@@ -299,12 +300,7 @@ namespace VirtoCommerce.Storefront.Controllers
                     return View("error", WorkContext);
                 }
 
-                // Generate the token and send it
-
-                // TODO: Support configurable providers ("Phone/Email")
-                // https://github.com/aspnet/Docs/blob/aac9bf5e4aaa4f593648ddb7b92ff0e52f2f6a47/aspnetcore/security/authentication/2fa/sample/Web2FA/Controllers/AccountController.cs#L380
-                // Now we are using only Phone provider
-                var selectedProvider = "Phone";
+                var selectedProvider = _options.TwoFactorAuthenticationNotificationGateway;
 
                 var userManager = _signInManager.UserManager;
                 var code = await userManager.GenerateTwoFactorTokenAsync(user, selectedProvider);
@@ -314,8 +310,9 @@ namespace VirtoCommerce.Storefront.Controllers
                     return View("error", WorkContext);
                 }
 
+                NotificationBase twoFactorNotification = null;
                 var veryfyCodeViewModel = new VerifyCodeViewModel() { Provider = selectedProvider, ReturnUrl = returnUrl, RememberMe = login.RememberMe, Username = login.Username };
-                if (veryfyCodeViewModel.Provider == "Phone")
+                if (veryfyCodeViewModel.Provider.EqualsInvariant("Phone"))
                 {
                     var phoneNumber = await userManager.GetPhoneNumberAsync(user);
                     if (string.IsNullOrEmpty(phoneNumber))
@@ -325,34 +322,27 @@ namespace VirtoCommerce.Storefront.Controllers
                         return View("error", WorkContext);
                     }
 
-                    var twoFactorSmsNotification = new TwoFactorSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                    twoFactorNotification = new TwoFactorSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
                     {
                         Token = code,
                         Recipient = phoneNumber,
                     };
 
-                    var sendingResult = await _platformNotificationApi.SendNotificationAsync(twoFactorSmsNotification.ToNotificationDto());
-                    if (sendingResult.IsSuccess != true)
-                    {
-                        ModelState.AddModelError("form", sendingResult.ErrorMessage);
-                    }
                 }
-                else if (veryfyCodeViewModel.Provider == "Email")
+                else // "Email"
                 {
-
-                    var twoFactorEmailNotification = new TwoFactorEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                    twoFactorNotification = new TwoFactorEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
                     {
                         Token = code,
                         Sender = WorkContext.CurrentStore.Email,
                         Recipient = GetUserEmail(user)
                     };
+                }
 
-                    var sendingResult = await _platformNotificationApi.SendNotificationAsync(twoFactorEmailNotification.ToNotificationDto());
-
-                    if (sendingResult.IsSuccess != true)
-                    {
-                        ModelState.AddModelError("form", sendingResult.ErrorMessage);
-                    }
+                var sendingResult = await _platformNotificationApi.SendNotificationAsync(twoFactorNotification.ToNotificationDto());
+                if (sendingResult.IsSuccess != true)
+                {
+                    ModelState.AddModelError("form", sendingResult.ErrorMessage);
                 }
 
                 WorkContext.Form = veryfyCodeViewModel;
@@ -519,7 +509,8 @@ namespace VirtoCommerce.Storefront.Controllers
             var user = await _signInManager.UserManager.FindByEmailAsync(formModel.Email);
             if (user != null)
             {
-                if (_options.UseSmsForPasswordReset)
+                NotificationBase resetPasswordNotification = null;
+                if (_options.ResetPasswordNotificationGateway.EqualsInvariant("Phone"))
                 {
                     var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
                     if (string.IsNullOrEmpty(phoneNumber))
@@ -530,46 +521,44 @@ namespace VirtoCommerce.Storefront.Controllers
                     {
                         var token = await _signInManager.UserManager.GenerateUserTokenAsync(user, TokenOptions.DefaultPhoneProvider, "ResetPassword");
 
-                        var resetPasswordSmsNotification = new ResetPasswordSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                        resetPasswordNotification = new ResetPasswordSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
                         {
                             Token = token,
                             Recipient = phoneNumber,
                         };
-
-                        var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordSmsNotification.ToNotificationDto());
-                        if (sendingResult.IsSuccess == true)
-                        {
-                            WorkContext.CurrentUser = user;
-                            return View($"customers/forgot_password_code", WorkContext);
-                        }
-                        else
-                        {
-                            ModelState.AddModelError("form", sendingResult.ErrorMessage);
-                        }
                     }
                 }
-                else
+                else // "Email"
                 {
                     var token = await _signInManager.UserManager.GeneratePasswordResetTokenAsync(user);
                     var callbackUrl = Url.Action("ResetPassword", "Account", new { UserId = user.Id, Token = token }, protocol: Request.Scheme);
 
-                    var resetPasswordEmailNotification = new ResetPasswordEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                    resetPasswordNotification = new ResetPasswordEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
                     {
                         Url = callbackUrl,
                         Sender = WorkContext.CurrentStore.Email,
                         Recipient = GetUserEmail(user)
                     };
+                }
 
-                    var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordEmailNotification.ToNotificationDto());
-                    if (sendingResult.IsSuccess != true)
+                var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordNotification.ToNotificationDto());
+                if (sendingResult.IsSuccess == true)
+                {
+                    if (_options.ResetPasswordNotificationGateway.EqualsInvariant("Phone"))
                     {
-                        ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                        WorkContext.CurrentUser = user;
+                        return View($"customers/forgot_password_code", WorkContext);
                     }
                 }
+                else
+                {
+                    ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                }
+
             }
             else
             {
-                ModelState.AddModelError("form", "User not found");
+                ModelState.AddModelError("form", "Operation failed");
             }
 
             return View("customers/forgot_password", WorkContext);
@@ -614,19 +603,14 @@ namespace VirtoCommerce.Storefront.Controllers
         [AllowAnonymous]
         public async Task<ActionResult> ResetPasswordByCode(ResetPasswordByCodeModel formModel)
         {
-            if (string.IsNullOrEmpty(formModel.Email))
+            TryValidateModel(formModel);
+
+            if (!ModelState.IsValid)
             {
-                WorkContext.ErrorMessage = "Error in request";
-                return View("error", WorkContext);
+                return View("customers/forgot_password_code", WorkContext);
             }
 
-            if (string.IsNullOrEmpty(formModel.Code))
-            {
-                WorkContext.ErrorMessage = "Code could not be empty";
-                return View("error", WorkContext);
-            }
-
-            if (!_options.UseSmsForPasswordReset)
+            if (!_options.ResetPasswordNotificationGateway.EqualsInvariant("Phone"))
             {
                 WorkContext.ErrorMessage = "Reset password by code is turned off.";
                 return View("error", WorkContext);
@@ -635,16 +619,16 @@ namespace VirtoCommerce.Storefront.Controllers
             var user = await _signInManager.UserManager.FindByEmailAsync(formModel.Email);
             if (user == null)
             {
-                WorkContext.ErrorMessage = "User was not found.";
-                return View("error", WorkContext);
+                ModelState.AddModelError("form", "Operation failed");
+                return View("customers/forgot_password_code", WorkContext);
             }
 
             var isValidToken = await _signInManager.UserManager.VerifyUserTokenAsync(user, TokenOptions.DefaultPhoneProvider, "ResetPassword", formModel.Code);
 
             if (!isValidToken)
             {
-                WorkContext.ErrorMessage = "Reset password token is invalid or expired";
-                return View("error", WorkContext);
+                ModelState.AddModelError("form", "Reset password token is invalid or expired");
+                return View("customers/forgot_password_code", WorkContext);
             }
 
             var token = await _signInManager.UserManager.GeneratePasswordResetTokenAsync(user);
