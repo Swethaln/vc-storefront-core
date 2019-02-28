@@ -19,8 +19,6 @@ namespace VirtoCommerce.Storefront.Infrastructure
 
         public int PageSizeMaxValue { get; set; } = 100;
 
-        public SmsProviderOptions SmsProvider { get; set; }
-
         public bool UseSmsForPasswordReset { get; set; }
 
     }

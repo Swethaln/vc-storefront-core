@@ -297,12 +297,6 @@ namespace VirtoCommerce.Storefront
                 options.IncludeSubDomains = true;
                 options.MaxAge = TimeSpan.FromDays(30);
             });
-
-            // Add SMS provider
-            services.AddSMSProvider(options =>
-            {
-                Configuration.GetSection("VirtoCommerce:SmsProvider").Bind(options);
-            });
         }
 
         // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.

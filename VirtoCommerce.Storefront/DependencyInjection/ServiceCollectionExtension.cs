@@ -30,8 +30,6 @@ using VirtoCommerce.Storefront.Common;
 using VirtoCommerce.Storefront.Domain;
 using VirtoCommerce.Storefront.Infrastructure;
 using VirtoCommerce.Storefront.Infrastructure.Autorest;
-using VirtoCommerce.Storefront.Infrastructure.Senders;
-using VirtoCommerce.Storefront.Model.Common;
 using VirtoCommerce.Storefront.Model.Common.Bus;
 using VirtoCommerce.Storefront.Model.Common.Events;
 using VirtoCommerce.Storefront.Model.Common.Messages;
@@ -122,33 +120,6 @@ namespace VirtoCommerce.Storefront.DependencyInjection
             {
                 services.Configure(setupAction);
             }
-        }
-
-        public static void AddSMSProvider(this IServiceCollection services, Action<SmsProviderOptions> setupAction = null)
-        {
-            services.AddTransient<DummySmsSender>();
-            services.AddTransient<TwilioSender>();
-            services.AddTransient<AspsmsSender>();
-            if (setupAction != null)
-            {
-                services.Configure(setupAction);
-            }
-            services.AddTransient<Func<ISmsSender>>(serviceProvider =>
-                () =>
-                {
-                    ISmsSender result = serviceProvider.GetService<DummySmsSender>();
-                    var smsOptions = serviceProvider.GetService<IOptions<SmsProviderOptions>>().Value;
-                    var providerType = smsOptions?.SmsProviderType;
-                    if (providerType?.EqualsInvariant("Twilio") == true)
-                    {
-                        result = serviceProvider.GetService<TwilioSender>();
-                    }
-                    else if (providerType?.EqualsInvariant("ASPSMS") == true)
-                    {
-                        result = serviceProvider.GetService<AspsmsSender>();
-                    }
-                    return result;
-                });
         }
 
         //Register event handlers through reflection

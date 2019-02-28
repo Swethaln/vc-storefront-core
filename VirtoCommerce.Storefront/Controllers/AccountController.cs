@@ -1,4 +1,3 @@
-using System;
 using System.Linq;
 using System.Security.Claims;
 using System.Threading.Tasks;
@@ -13,7 +12,6 @@ using VirtoCommerce.Storefront.Domain.Security;
 using VirtoCommerce.Storefront.Domain.Security.Notifications;
 using VirtoCommerce.Storefront.Extensions;
 using VirtoCommerce.Storefront.Infrastructure;
-using VirtoCommerce.Storefront.Infrastructure.Senders;
 using VirtoCommerce.Storefront.Model;
 using VirtoCommerce.Storefront.Model.Common;
 using VirtoCommerce.Storefront.Model.Common.Events;
@@ -31,7 +29,6 @@ namespace VirtoCommerce.Storefront.Controllers
         private readonly StorefrontOptions _options;
         private readonly INotifications _platformNotificationApi;
         private readonly IAuthorizationService _authorizationService;
-        private readonly Func<ISmsSender> _smsSenderFactory;
 
         private readonly string[] _firstNameClaims = { ClaimTypes.GivenName, "urn:github:name", ClaimTypes.Name };
 
@@ -42,8 +39,7 @@ namespace VirtoCommerce.Storefront.Controllers
             IEventPublisher publisher,
             INotifications platformNotificationApi,
             IAuthorizationService authorizationService,
-            IOptions<StorefrontOptions> options,
-            Func<ISmsSender> smsSenderFactory)
+            IOptions<StorefrontOptions> options)
             : base(workContextAccessor, urlBuilder)
         {
             _signInManager = signInManager;
@@ -51,7 +47,6 @@ namespace VirtoCommerce.Storefront.Controllers
             _options = options.Value;
             _platformNotificationApi = platformNotificationApi;
             _authorizationService = authorizationService;
-            _smsSenderFactory = smsSenderFactory;
         }
 
         //GET: /account
@@ -279,7 +274,6 @@ namespace VirtoCommerce.Storefront.Controllers
             login.Username = login.Username?.Trim();
 
             var loginResult = await _signInManager.PasswordSignInAsync(login.Username, login.Password, login.RememberMe, lockoutOnFailure: true);
-
             if (loginResult.Succeeded)
             {
                 var user = await _signInManager.UserManager.FindByNameAsync(login.Username);
@@ -299,6 +293,12 @@ namespace VirtoCommerce.Storefront.Controllers
             {
                 var user = await _signInManager.UserManager.FindByNameAsync(login.Username);
 
+                if (user == null)
+                {
+                    WorkContext.ErrorMessage = $"Operation failed";
+                    return View("error", WorkContext);
+                }
+
                 // Generate the token and send it
 
                 // TODO: Support configurable providers ("Phone/Email")
@@ -310,20 +310,50 @@ namespace VirtoCommerce.Storefront.Controllers
                 var code = await userManager.GenerateTwoFactorTokenAsync(user, selectedProvider);
                 if (string.IsNullOrWhiteSpace(code))
                 {
-                    WorkContext.ErrorMessage = $"Generated two factor authentication token is empty";
+                    WorkContext.ErrorMessage = $"Operation failed";
                     return View("error", WorkContext);
                 }
 
                 var veryfyCodeViewModel = new VerifyCodeViewModel() { Provider = selectedProvider, ReturnUrl = returnUrl, RememberMe = login.RememberMe, Username = login.Username };
-                var message = "Your security code is: " + code;
                 if (veryfyCodeViewModel.Provider == "Phone")
                 {
-                    await _smsSenderFactory().SendSmsAsync(await userManager.GetPhoneNumberAsync(user), message);
+                    var phoneNumber = await userManager.GetPhoneNumberAsync(user);
+                    if (string.IsNullOrEmpty(phoneNumber))
+                    {
+                        // Do not tell we have this user without phone
+                        WorkContext.ErrorMessage = $"Operation failed";
+                        return View("error", WorkContext);
+                    }
+
+                    var twoFactorSmsNotification = new TwoFactorSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                    {
+                        Token = code,
+                        Recipient = phoneNumber,
+                    };
+
+                    var sendingResult = await _platformNotificationApi.SendNotificationAsync(twoFactorSmsNotification.ToNotificationDto());
+                    if (sendingResult.IsSuccess != true)
+                    {
+                        ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                    }
                 }
-                //else if (veryfyCodeViewModel.Provider == "Email")
-                //{
-                //    await _emailSender.SendEmailAsync(await userManager.GetEmailAsync(user), "Security Code", message);
-                //}
+                else if (veryfyCodeViewModel.Provider == "Email")
+                {
+
+                    var twoFactorEmailNotification = new TwoFactorEmailNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+                    {
+                        Token = code,
+                        Sender = WorkContext.CurrentStore.Email,
+                        Recipient = GetUserEmail(user)
+                    };
+
+                    var sendingResult = await _platformNotificationApi.SendNotificationAsync(twoFactorEmailNotification.ToNotificationDto());
+
+                    if (sendingResult.IsSuccess != true)
+                    {
+                        ModelState.AddModelError("form", sendingResult.ErrorMessage);
+                    }
+                }
 
                 WorkContext.Form = veryfyCodeViewModel;
                 return View("verify-code", WorkContext);
@@ -494,7 +524,7 @@ namespace VirtoCommerce.Storefront.Controllers
                     var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(user);
                     if (string.IsNullOrEmpty(phoneNumber))
                     {
-                        ModelState.AddModelError("form", "Phone is not assigned to the user");
+                        ModelState.AddModelError("form", "Operation failed");
                     }
                     else
                     {
@@ -751,7 +781,20 @@ namespace VirtoCommerce.Storefront.Controllers
             }
             // Generate the token and send it
             var code = await _signInManager.UserManager.GenerateChangePhoneNumberTokenAsync(WorkContext.CurrentUser, formModel.PhoneNumber);
-            await _smsSenderFactory().SendSmsAsync(formModel.PhoneNumber, "Your security code is: " + code);
+
+            var changePhoneNumberSmsNotification = new ChangePhoneNumberSmsNotification(WorkContext.CurrentStore.Id, WorkContext.CurrentLanguage)
+            {
+                Token = code,
+                Recipient = formModel.PhoneNumber,
+            };
+
+            var sendingResult = await _platformNotificationApi.SendNotificationAsync(changePhoneNumberSmsNotification.ToNotificationDto());
+            if (sendingResult.IsSuccess != true)
+            {
+                WorkContext.ErrorMessage = sendingResult.ErrorMessage;
+                WorkContext.Form = formModel;
+                return View("customers/phone_number", WorkContext);
+            }
 
             return StoreFrontRedirect($"customers/phone_number?phoneNumber={formModel.PhoneNumber}");
         }
