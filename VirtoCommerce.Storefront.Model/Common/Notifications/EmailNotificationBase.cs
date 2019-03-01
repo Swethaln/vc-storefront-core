@@ -17,7 +17,7 @@ namespace VirtoCommerce.Storefront.Model.Common.Notifications
             {
                 yield return kvp;
             }
-            yield return new KeyValuePair<string, string>(nameof(Recipient), Recipient);
+            yield return new KeyValuePair<string, string>(nameof(Sender), Sender);
         }
     }
 }
