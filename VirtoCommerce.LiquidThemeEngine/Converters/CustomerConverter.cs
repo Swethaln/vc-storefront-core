@@ -28,6 +28,7 @@ namespace VirtoCommerce.LiquidThemeEngine.Converters
                 OperatorUserName = user.OperatorUserName,
                 UserName = user.UserName,
                 PhoneNumber = user.PhoneNumber,
+                PhoneNumberConfirmed = user.PhoneNumberConfirmed,
                 TwoFactorEnabled = user.TwoFactorEnabled,
             };
 

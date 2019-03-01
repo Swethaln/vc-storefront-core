@@ -132,12 +132,17 @@ namespace VirtoCommerce.LiquidThemeEngine.Objects
         /// </summary>
         public string OperatorUserName { get; set; }
         /// <summary>
-        /// Return customer phonenumber
+        /// Returns customer phonenumber
         /// </summary>
         [DataMember]
         public string PhoneNumber { get; set; }
         /// <summary>
-        /// Return is two factor authentication is enabled for customer
+        /// Returns true if customer phonenumber is confirmed
+        /// </summary>
+        [DataMember]
+        public bool PhoneNumberConfirmed { get; set; }
+        /// <summary>
+        /// Returns true if two factor authentication is enabled for customer
         /// </summary>
         [DataMember]
         public bool TwoFactorEnabled { get; set; }

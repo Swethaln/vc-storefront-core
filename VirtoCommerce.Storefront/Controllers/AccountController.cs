@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using VirtoCommerce.Storefront.AutoRestClients.PlatformModuleApi;
+using VirtoCommerce.Storefront.AutoRestClients.PlatformModuleApi.Models;
 using VirtoCommerce.Storefront.Domain;
 using VirtoCommerce.Storefront.Domain.Common;
 using VirtoCommerce.Storefront.Domain.Security;
@@ -339,7 +340,8 @@ namespace VirtoCommerce.Storefront.Controllers
                     };
                 }
 
-                var sendingResult = await _platformNotificationApi.SendNotificationAsync(twoFactorNotification.ToNotificationDto());
+
+                var sendingResult = await SendNotification(twoFactorNotification);
                 if (sendingResult.IsSuccess != true)
                 {
                     ModelState.AddModelError("form", sendingResult.ErrorMessage);
@@ -516,6 +518,7 @@ namespace VirtoCommerce.Storefront.Controllers
                     if (string.IsNullOrEmpty(phoneNumber))
                     {
                         ModelState.AddModelError("form", "Operation failed");
+                        return View("customers/forgot_password", WorkContext);
                     }
                     else
                     {
@@ -541,7 +544,7 @@ namespace VirtoCommerce.Storefront.Controllers
                     };
                 }
 
-                var sendingResult = await _platformNotificationApi.SendNotificationAsync(resetPasswordNotification.ToNotificationDto());
+                var sendingResult = await SendNotification(resetPasswordNotification);
                 if (sendingResult.IsSuccess == true)
                 {
                     if (_options.ResetPasswordNotificationGateway.EqualsInvariant("Phone"))
@@ -554,7 +557,6 @@ namespace VirtoCommerce.Storefront.Controllers
                 {
                     ModelState.AddModelError("form", sendingResult.ErrorMessage);
                 }
-
             }
             else
             {
@@ -586,7 +588,7 @@ namespace VirtoCommerce.Storefront.Controllers
                     Recipient = GetUserEmail(user)
                 };
 
-                var sendingResult = await _platformNotificationApi.SendNotificationAsync(remindUserNameNotification.ToNotificationDto());
+                var sendingResult = await SendNotification(remindUserNameNotification);
                 if (sendingResult.IsSuccess != true)
                 {
                     ModelState.AddModelError("form", sendingResult.ErrorMessage);
@@ -748,9 +750,12 @@ namespace VirtoCommerce.Storefront.Controllers
         }
 
         [HttpGet("phonenumber")]
-        public ActionResult UpdatePhoneNumber(string phoneNumber)
+        public async Task<ActionResult> UpdatePhoneNumber()
         {
-            return View("customers/phone_number", new UpdatePhoneNumberModel { PhoneNumber = phoneNumber });
+            var phoneNumber = await _signInManager.UserManager.GetPhoneNumberAsync(WorkContext.CurrentUser);
+            WorkContext.Form = new UpdatePhoneNumberModel { PhoneNumber = phoneNumber };
+
+            return View("customers/phone_number", WorkContext);
         }
 
         [HttpPost("phonenumber")]
@@ -771,15 +776,16 @@ namespace VirtoCommerce.Storefront.Controllers
                 Recipient = formModel.PhoneNumber,
             };
 
-            var sendingResult = await _platformNotificationApi.SendNotificationAsync(changePhoneNumberSmsNotification.ToNotificationDto());
+            var sendingResult = await SendNotification(changePhoneNumberSmsNotification);
             if (sendingResult.IsSuccess != true)
             {
-                WorkContext.ErrorMessage = sendingResult.ErrorMessage;
+                ModelState.AddModelError("form", sendingResult.ErrorMessage);
                 WorkContext.Form = formModel;
                 return View("customers/phone_number", WorkContext);
             }
 
-            return View("customers/verify_phone_number", new VerifyPhoneNumberModel { PhoneNumber = formModel.PhoneNumber });
+            WorkContext.Form = new VerifyPhoneNumberModel { PhoneNumber = formModel.PhoneNumber };
+            return View("customers/verify_phone_number", WorkContext);
         }
 
         [HttpPost("phonenumber/verify")]
@@ -799,8 +805,10 @@ namespace VirtoCommerce.Storefront.Controllers
                 return StoreFrontRedirect("~/account");
             }
             // If we got this far, something failed
-            WorkContext.ErrorMessage = "Failed to verify phone number";
-            return View("customers/verify_phone_number", formModel);
+            ModelState.AddModelError("form", "Failed to verify phone number");
+            WorkContext.Form = formModel;
+
+            return View("customers/verify_phone_number", WorkContext);
         }
 
         private static string GetUserEmail(User user)
@@ -815,6 +823,21 @@ namespace VirtoCommerce.Storefront.Controllers
                 }
             }
             return email;
+        }
+
+        private async Task<SendNotificationResult> SendNotification(NotificationBase notification)
+        {
+            var result = new SendNotificationResult();
+            try
+            {
+                result = await _platformNotificationApi.SendNotificationAsync(notification.ToNotificationDto());
+            }
+            catch
+            {
+                result.IsSuccess = false;
+                result.ErrorMessage = "Error occured while sending notification";
+            }
+            return result;
         }
     }
 }

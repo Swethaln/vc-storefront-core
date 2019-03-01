@@ -431,6 +431,7 @@ namespace VirtoCommerce.Storefront.Controllers.Api
         public async Task<IActionResult> RemovePhoneNumber()
         {
             var result = await _signInManager.UserManager.SetPhoneNumberAsync(WorkContext.CurrentUser, null);
+            await _signInManager.SignInAsync(WorkContext.CurrentUser, isPersistent: false);
 
             return Json(new { result.Succeeded, Errors = result.Errors.Select(x => x.Description) });
         }
@@ -438,7 +439,7 @@ namespace VirtoCommerce.Storefront.Controllers.Api
         // POST: storefrontapi/account/twofactorauthentification
         [HttpPost("twofactorauthentification")]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> EnableTwoFactorAuthentication(EnableTwoFactorAuthenticationModel model)
+        public async Task<IActionResult> EnableTwoFactorAuthentication([FromBody] EnableTwoFactorAuthenticationModel model)
         {
             var result = await _signInManager.UserManager.SetTwoFactorEnabledAsync(WorkContext.CurrentUser, model.Enabled);
             await _signInManager.SignInAsync(WorkContext.CurrentUser, isPersistent: false);
