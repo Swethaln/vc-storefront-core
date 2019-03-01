@@ -346,7 +346,7 @@ namespace VirtoCommerce.Storefront.Controllers
                 }
 
                 WorkContext.Form = veryfyCodeViewModel;
-                return View("verify-code", WorkContext);
+                return View("customers/verify_code", WorkContext);
             }
 
             if (loginResult.IsLockedOut)
@@ -373,7 +373,7 @@ namespace VirtoCommerce.Storefront.Controllers
             TryValidateModel(model);
             if (!ModelState.IsValid)
             {
-                return View("verify-code", WorkContext);
+                return View("customers/verify_code", WorkContext);
             }
 
             // The following code protects for brute force attacks against the two factor codes.
@@ -393,7 +393,7 @@ namespace VirtoCommerce.Storefront.Controllers
 
             ModelState.AddModelError("form", "Invalid code.");
             WorkContext.Form = model;
-            return View("verify-code", WorkContext);
+            return View("customers/verify_code", WorkContext);
         }
 
         [HttpGet("logout")]
@@ -779,7 +779,7 @@ namespace VirtoCommerce.Storefront.Controllers
                 return View("customers/phone_number", WorkContext);
             }
 
-            return View("customers/verify_phone", new VerifyPhoneNumberModel { PhoneNumber = formModel.PhoneNumber });
+            return View("customers/verify_phone_number", new VerifyPhoneNumberModel { PhoneNumber = formModel.PhoneNumber });
         }
 
         [HttpPost("phonenumber/verify")]
@@ -789,7 +789,7 @@ namespace VirtoCommerce.Storefront.Controllers
             TryValidateModel(formModel);
             if (!ModelState.IsValid)
             {
-                return View("customers/verify_phone", WorkContext);
+                return View("customers/verify_phone_number", WorkContext);
             }
 
             var result = await _signInManager.UserManager.ChangePhoneNumberAsync(WorkContext.CurrentUser, formModel.PhoneNumber, formModel.Code);
@@ -800,7 +800,7 @@ namespace VirtoCommerce.Storefront.Controllers
             }
             // If we got this far, something failed
             WorkContext.ErrorMessage = "Failed to verify phone number";
-            return View("customers/verify_phone", formModel);
+            return View("customers/verify_phone_number", formModel);
         }
 
         private static string GetUserEmail(User user)

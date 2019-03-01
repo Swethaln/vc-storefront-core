@@ -1,9 +1,7 @@
-using DotLiquid;
 using System.Collections.Generic;
 using System.Runtime.Serialization;
-using VirtoCommerce.Storefront.Model;
+using DotLiquid;
 using VirtoCommerce.Storefront.Model.Common;
-using PagedList;
 
 namespace VirtoCommerce.LiquidThemeEngine.Objects
 {
@@ -133,5 +131,15 @@ namespace VirtoCommerce.LiquidThemeEngine.Objects
         /// The user name of an operator who has loggen in on behalf of a customer
         /// </summary>
         public string OperatorUserName { get; set; }
+        /// <summary>
+        /// Return customer phonenumber
+        /// </summary>
+        [DataMember]
+        public string PhoneNumber { get; set; }
+        /// <summary>
+        /// Return is two factor authentication is enabled for customer
+        /// </summary>
+        [DataMember]
+        public bool TwoFactorEnabled { get; set; }
     }
 }
