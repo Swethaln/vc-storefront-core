@@ -5,10 +5,10 @@ namespace VirtoCommerce.Storefront.Model.Security
 {
     public class ResetPasswordByCodeModel
     {
-        [Required]
+        [Required(ErrorMessage = "An Email is required")]
         [FromForm(Name = "customer[email]")]
         public string Email { get; set; }
-        [Required]
+        [Required(ErrorMessage = "A Code is required")]
         [FromForm(Name = "customer[code]")]
         public string Code { get; set; }
 
